@@ -85,64 +85,54 @@ def save_to_file(content):
     
     print(f"Hasil enkripsi berhasil disimpan ke file: {filename}")
 
-# Fungsi untuk enkripsi
+# Fungsi untuk enkripsi dengan jumlah putaran dinamis
 def encrypt_text():
     original_text = input("Masukkan teks yang akan dienkripsi: ")
-    aes_key = input("Masukkan kunci AES (16/24/32 karakter): ")
-    sub_key = input("Masukkan kunci untuk mengacak substitusi: ")  # Kunci untuk substitusi acak
-
+    num_layers = int(input("Masukkan berapa kali ingin mengenkripsi teks: "))
+    
     # Substitusi huruf berdasarkan kunci
+    sub_key = input("Masukkan kunci untuk mengacak substitusi: ")  # Kunci untuk substitusi acak
     substituted_text, substitution_map = key_based_substitution(original_text, sub_key)
     print(f"Hasil Substitusi: {substituted_text}")
     
-    # Enkripsi pertama
-    encrypted_text_1 = aes_encrypt(substituted_text, aes_key)
-    print(f"Hasil Enkripsi Pertama: {encrypted_text_1}")
+    encrypted_text = substituted_text
+    encryption_keys = []
     
-    # Enkripsi kedua
-    encrypted_text_2 = aes_encrypt(encrypted_text_1, aes_key)
-    print(f"Hasil Enkripsi Kedua: {encrypted_text_2}")
-    
-    # Enkripsi ketiga
-    encrypted_text_3 = aes_encrypt(encrypted_text_2, aes_key)
-    print(f"Hasil Enkripsi Ketiga: {encrypted_text_3}")
+    # Lakukan enkripsi sebanyak yang diinginkan user
+    for i in range(num_layers):
+        aes_key = input(f"Masukkan kunci AES untuk enkripsi ke-{i+1} (16/24/32 karakter): ")
+        encrypted_text = aes_encrypt(encrypted_text, aes_key)
+        encryption_keys.append(aes_key)
+        print(f"Hasil Enkripsi ke-{i+1}: {encrypted_text}")
 
     # Tanya user apakah ingin menyimpan hasilnya ke file
     save_choice = input("Apakah Anda ingin menyimpan hasil enkripsi ke file? (y/n): ").lower()
     if save_choice == 'y':
-        content = f"Teks Asli: {original_text}\nHasil Enkripsi Ketiga: {encrypted_text_3}"
+        content = f"Teks Asli: {original_text}\nHasil Enkripsi: {encrypted_text}\nKunci Substitusi: {sub_key}\nKunci AES yang digunakan: {encryption_keys}"
         save_to_file(content)
     else:
         print("Hasil enkripsi tidak disimpan.")
 
-    return encrypted_text_3, aes_key, sub_key
+    return encrypted_text, encryption_keys, sub_key, num_layers
 
-# Fungsi untuk dekripsi
+# Fungsi untuk dekripsi dengan jumlah putaran dinamis
 def decrypt_text():
     encrypted_text = input("Masukkan teks yang akan didekripsi: ")
-    aes_key = input("Masukkan kunci AES (16/24/32 karakter): ")
-    sub_key = input("Masukkan kunci yang digunakan untuk mengacak substitusi: ")  # Kunci substitusi
-
-    # Dekripsi AES
-    try:
-        # Dekripsi ketiga
-        decrypted_text_3 = aes_decrypt(encrypted_text, aes_key)
-        print(f"Hasil Dekripsi Ketiga: {decrypted_text_3}")
-        
-        # Dekripsi kedua
-        decrypted_text_2 = aes_decrypt(decrypted_text_3, aes_key)
-        print(f"Hasil Dekripsi Kedua: {decrypted_text_2}")
-        
-        # Dekripsi pertama
-        decrypted_text_1 = aes_decrypt(decrypted_text_2, aes_key)
-        print(f"Hasil Dekripsi Pertama: {decrypted_text_1}")
-        
-        # Membalikkan substitusi berdasarkan kunci substitusi
-        original_text = reverse_substitution(decrypted_text_1, sub_key)
-        
-        print(f"Teks asli setelah dekripsi: {original_text}")
-    except (ValueError, KeyError):
-        print("Dekripsi gagal. Pastikan kunci AES dan substitusi benar.")
+    num_layers = int(input("Masukkan berapa kali teks dienkripsi: "))
+    
+    # Dekripsi AES dengan jumlah putaran sesuai input pengguna
+    decryption_keys = []
+    for i in range(num_layers):
+        aes_key = input(f"Masukkan kunci AES untuk dekripsi ke-{num_layers-i}: ")
+        encrypted_text = aes_decrypt(encrypted_text, aes_key)
+        decryption_keys.append(aes_key)
+        print(f"Hasil Dekripsi ke-{num_layers-i}: {encrypted_text}")
+    
+    # Masukkan kunci untuk membalikkan substitusi
+    sub_key = input("Masukkan kunci yang digunakan untuk mengacak substitusi: ")
+    original_text = reverse_substitution(encrypted_text, sub_key)
+    
+    print(f"Teks asli setelah dekripsi: {original_text}")
 
 # Fungsi menu utama
 def main_menu():
