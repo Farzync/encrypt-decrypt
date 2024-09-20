@@ -1,158 +1,151 @@
-import random
-import string
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
-from base64 import b64encode, b64decode
-from datetime import datetime
+import argparse
+import os
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+from cryptography.hazmat.primitives import padding
+from getpass import getpass  # For securely handling passwords in interactive mode
 
-# Fungsi untuk memastikan panjang kunci yang valid (16, 24, atau 32 byte)
-def adjust_key_length(key):
-    if len(key) not in [16, 24, 32]:
-        key = key.ljust(32)[:32]  # Membuat kunci tepat 32 karakter
-    return key
+# Function to derive a key from the provided password and salt using the Scrypt KDF
+def derive_key(password: str, salt: bytes) -> bytes:
+    try:
+        kdf = Scrypt(salt=salt, length=32, n=2**14, r=8, p=1, backend=default_backend())
+        return kdf.derive(password.encode())
+    except Exception as e:
+        raise ValueError(f"Error deriving key: {e}")
 
-# Fungsi substitusi berdasarkan kunci substitusi (mengenkripsi semua karakter termasuk angka dan simbol)
-def key_based_substitution(text, sub_key):
-    random.seed(sub_key)  # Menggunakan kunci substitusi sebagai seed
-    substitution = {}
-    # Menggabungkan huruf, angka, dan simbol untuk disubstitusi
-    characters = string.ascii_uppercase + string.ascii_lowercase + string.digits + string.punctuation
-    shuffled_chars = list(characters)
-    random.shuffle(shuffled_chars)  # Mengacak semua karakter berdasarkan kunci substitusi
-    
-    # Membuat peta substitusi untuk semua karakter
-    for i, char in enumerate(characters):
-        substitution[char] = ''.join(random.choices(shuffled_chars, k=3))  # 3 karakter acak menggantikan 1 karakter
-    
-    substituted_text = ''.join(substitution[char] if char in substitution else char for char in text)
-    return substituted_text, substitution  # Mengembalikan teks yang sudah disubstitusi dan map substitusi
+# Function to read file content
+def read_file(file_path: str) -> bytes:
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Error: File '{file_path}' not found.")
+    try:
+        with open(file_path, 'rb') as file:
+            return file.read()
+    except Exception as e:
+        raise IOError(f"Error reading file '{file_path}': {e}")
 
-# Enkripsi AES
-def aes_encrypt(text, key):
-    key = adjust_key_length(key)  # Memastikan panjang kunci benar
-    cipher = AES.new(key.encode('utf-8'), AES.MODE_CBC)
-    ct_bytes = cipher.encrypt(pad(text.encode('utf-8'), AES.block_size))
-    iv = b64encode(cipher.iv).decode('utf-8')
-    ct = b64encode(ct_bytes).decode('utf-8')
-    return iv + ct
+# Function to write data to file
+def write_file(file_path: str, data: bytes):
+    try:
+        with open(file_path, 'wb') as file:
+            file.write(data)
+    except Exception as e:
+        raise IOError(f"Error writing to file '{file_path}': {e}")
 
-# Dekripsi AES
-def aes_decrypt(encrypted_text, key):
-    key = adjust_key_length(key)  # Memastikan panjang kunci benar
-    iv = b64decode(encrypted_text[:24])
-    ct = b64decode(encrypted_text[24:])
-    cipher = AES.new(key.encode('utf-8'), AES.MODE_CBC, iv)
-    decrypted = unpad(cipher.decrypt(ct), AES.block_size)
-    return decrypted.decode('utf-8')
+# Function to encrypt file
+def encrypt_file(password: str, input_file: str, output_file: str):
+    try:
+        data = read_file(input_file)
 
-# Fungsi untuk membalikkan substitusi berdasarkan kunci substitusi (mengenkripsi semua karakter)
-def reverse_substitution(decrypted_text_1, sub_key):
-    random.seed(sub_key)  # Pastikan kunci yang sama digunakan untuk membalikkan substitusi
-    substitution_map = {}
-    # Menggabungkan huruf, angka, dan simbol untuk dibalikkan
-    characters = string.ascii_uppercase + string.ascii_lowercase + string.digits + string.punctuation
-    shuffled_chars = list(characters)
-    random.shuffle(shuffled_chars)
-    
-    # Pemetaan karakter acak ke karakter asli
-    for i, char in enumerate(characters):
-        substitution_map[''.join(random.choices(shuffled_chars, k=3))] = char
+        # Padding the data to match the block size of AES
+        padder = padding.PKCS7(algorithms.AES.block_size).padder()
+        padded_data = padder.update(data) + padder.finalize()
 
-    # Membalikkan substitusi
-    original_text = ''
-    i = 0
-    while i < len(decrypted_text_1):
-        block = decrypted_text_1[i:i+3]
-        if block in substitution_map:
-            original_text += substitution_map[block]
-        else:
-            original_text += decrypted_text_1[i]  # Jika tidak ditemukan (misalnya spasi), tambahkan karakter asli
-            i += 1
-            continue
-        i += 3  # Lanjutkan iterasi setiap 3 karakter
-    
-    return original_text
+        # Generating a random salt and IV
+        salt = os.urandom(16)
+        iv = os.urandom(16)
 
-# Fungsi untuk menyimpan hasil ke file
-def save_to_file(content):
-    # Membuat nama file dengan format "encrypted-tanggal-dan-waktu.txt"
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"encrypted-{timestamp}.txt"
-    
-    # Menyimpan ke file
-    with open(filename, 'w') as f:
-        f.write(content)
-    
-    print(f"Hasil enkripsi berhasil disimpan ke file: {filename}")
+        # Deriving the key
+        key = derive_key(password, salt)
 
-# Fungsi untuk enkripsi dengan jumlah putaran dinamis
-def encrypt_text():
-    original_text = input("Masukkan teks yang akan dienkripsi: ")
-    num_layers = int(input("Masukkan berapa kali ingin mengenkripsi teks: "))
-    
-    # Substitusi huruf berdasarkan kunci
-    sub_key = input("Masukkan kunci untuk mengacak substitusi: ")  # Kunci untuk substitusi acak
-    substituted_text, substitution_map = key_based_substitution(original_text, sub_key)
-    print(f"Hasil Substitusi: {substituted_text}")
-    
-    encrypted_text = substituted_text
-    encryption_keys = []
-    
-    # Lakukan enkripsi sebanyak yang diinginkan user
-    for i in range(num_layers):
-        aes_key = input(f"Masukkan kunci AES untuk enkripsi ke-{i+1} (16/24/32 karakter): ")
-        encrypted_text = aes_encrypt(encrypted_text, aes_key)
-        encryption_keys.append(aes_key)
-        print(f"Hasil Enkripsi ke-{i+1}: {encrypted_text}")
+        # Initializing the AES cipher in CBC mode
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+        encryptor = cipher.encryptor()
 
-    # Tanya user apakah ingin menyimpan hasilnya ke file
-    save_choice = input("Apakah Anda ingin menyimpan hasil enkripsi ke file? (y/n): ").lower()
-    if save_choice == 'y':
-        content = f"Teks Asli: {original_text}\nHasil Enkripsi: {encrypted_text}\nKunci Substitusi: {sub_key}\nKunci AES yang digunakan: {encryption_keys}"
-        save_to_file(content)
+        # Encrypting the padded data
+        encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
+
+        # Writing the salt, IV, and encrypted data to the output file
+        write_file(output_file, salt + iv + encrypted_data)
+        print(f"File successfully encrypted: {input_file} -> {output_file}")
+    except Exception as e:
+        print(f"Encryption error: {e}")
+
+# Function to decrypt file
+def decrypt_file(password: str, input_file: str, output_file: str):
+    try:
+        encrypted_data = read_file(input_file)
+
+        # Extracting the salt, IV, and ciphertext
+        salt = encrypted_data[:16]
+        iv = encrypted_data[16:32]
+        ciphertext = encrypted_data[32:]
+
+        # Deriving the key using the same salt
+        key = derive_key(password, salt)
+
+        # Initializing the AES cipher in CBC mode
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+        decryptor = cipher.decryptor()
+
+        # Decrypting the ciphertext
+        decrypted_padded_data = decryptor.update(ciphertext) + decryptor.finalize()
+
+        # Unpadding the decrypted data
+        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+        decrypted_data = unpadder.update(decrypted_padded_data) + unpadder.finalize()
+
+        # Writing the decrypted data to the output file
+        write_file(output_file, decrypted_data)
+        print(f"File successfully decrypted: {input_file} -> {output_file}")
+    except Exception as e:
+        print(f"Decryption error: {e}")
+
+# Function to handle interactive mode when no arguments are provided
+def interactive_mode():
+    try:
+        # Ask the user for the mode (encrypt or decrypt)
+        mode = input("Select mode (encrypt/decrypt): ").strip().lower()
+        if mode not in ['encrypt', 'decrypt']:
+            raise ValueError("Invalid mode selected.")
+
+        # Securely ask for the password using getpass for privacy
+        password = getpass("Enter password: ")
+
+        # Ask for the input and output file paths
+        input_file = input("Enter input file path: ").strip()
+        output_file = input("Enter output file path: ").strip()
+
+        # Check if the input file exists
+        if not os.path.exists(input_file):
+            raise FileNotFoundError(f"Error: File '{input_file}' not found.")
+
+        # Perform encryption or decryption based on the mode
+        if mode == 'encrypt':
+            encrypt_file(password, input_file, output_file)
+        elif mode == 'decrypt':
+            decrypt_file(password, input_file, output_file)
+    except Exception as e:
+        print(f"Interactive mode error: {e}")
+
+# Main function to handle both CLI arguments and interactive mode
+def main():
+    parser = argparse.ArgumentParser(description='Encrypt and decrypt files using AES encryption.')
+    
+    # Optional CLI arguments for mode, password, input file, and output file
+    parser.add_argument('mode', choices=['encrypt', 'decrypt'], nargs='?', help="Mode: 'encrypt' for encryption, 'decrypt' for decryption")
+    parser.add_argument('password', nargs='?', help="Password for encryption or decryption")
+    parser.add_argument('input_file', nargs='?', help="Path to the input file")
+    parser.add_argument('output_file', nargs='?', help="Path to the output file")
+
+    args = parser.parse_args()
+
+    # If no arguments are provided, switch to interactive mode
+    if not (args.mode and args.password and args.input_file and args.output_file):
+        print("No arguments provided, switching to interactive mode.")
+        interactive_mode()
     else:
-        print("Hasil enkripsi tidak disimpan.")
+        # Check if input file exists before proceeding
+        if not os.path.exists(args.input_file):
+            print(f"Error: File '{args.input_file}' not found.")
+            return
 
-    return encrypted_text, encryption_keys, sub_key, num_layers
+        # Perform encryption or decryption based on the provided mode
+        if args.mode == 'encrypt':
+            encrypt_file(args.password, args.input_file, args.output_file)
+        elif args.mode == 'decrypt':
+            decrypt_file(args.password, args.input_file, args.output_file)
 
-# Fungsi untuk dekripsi dengan jumlah putaran dinamis
-def decrypt_text():
-    encrypted_text = input("Masukkan teks yang akan didekripsi: ")
-    num_layers = int(input("Masukkan berapa kali teks dienkripsi: "))
-    
-    # Dekripsi AES dengan jumlah putaran sesuai input pengguna
-    decryption_keys = []
-    for i in range(num_layers):
-        aes_key = input(f"Masukkan kunci AES untuk dekripsi ke-{num_layers-i}: ")
-        encrypted_text = aes_decrypt(encrypted_text, aes_key)
-        decryption_keys.append(aes_key)
-        print(f"Hasil Dekripsi ke-{num_layers-i}: {encrypted_text}")
-    
-    # Masukkan kunci untuk membalikkan substitusi
-    sub_key = input("Masukkan kunci yang digunakan untuk mengacak substitusi: ")
-    original_text = reverse_substitution(encrypted_text, sub_key)
-    
-    print(f"Teks asli setelah dekripsi: {original_text}")
-
-# Fungsi menu utama
-def main_menu():
-    while True:
-        print("\n=== MENU UTAMA ===")
-        print("1. Enkripsi teks")
-        print("2. Dekripsi teks")
-        print("3. Keluar")
-        pilihan = input("Pilih opsi (1/2/3): ")
-        
-        if pilihan == "1":
-            encrypt_text()  # Panggil fungsi enkripsi
-        elif pilihan == "2":
-            decrypt_text()  # Panggil fungsi dekripsi
-        elif pilihan == "3":
-            print("Keluar dari program.")
-            break
-        else:
-            print("Pilihan tidak valid. Silakan coba lagi.")
-
-# Jalankan menu utama
+# Entry point for the script
 if __name__ == "__main__":
-    main_menu()
+    main()
