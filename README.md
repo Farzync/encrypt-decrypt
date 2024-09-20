@@ -1,7 +1,8 @@
-
 # AES File Encryption & Decryption Script
 
 This Python script is used for encrypting and decrypting files using the **AES** algorithm with **CBC** (Cipher Block Chaining) mode. The script supports usage through the **CLI (Command Line Interface)** with arguments, or it can be run in **interactive mode**, where the user is prompted for inputs directly.
+
+Untuk Instruksi Menggunakan Bahasa Indonesia, Klik [disini](README_ID.md).
 
 ## Features
 - **File Encryption**: Encrypt files using AES and a key derived from a password.
